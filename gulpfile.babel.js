@@ -1,61 +1,101 @@
-import gulp from 'gulp';
-import browserify from 'browserify';
-import source from 'vinyl-source-stream';
+import gulp from 'gulp'
+import autoprefixer from 'gulp-autoprefixer'
+import clean from 'gulp-clean-dest'
+import minify from 'gulp-clean-css'
+import rename from 'gulp-rename'
+import sass from 'gulp-sass'
+import sourcemaps from 'gulp-sourcemaps'
+import uglify from 'gulp-uglify'
+
+import path from 'path'
+import browserSync from 'browser-sync'
+
+import buffer from 'vinyl-buffer'
+import source from 'vinyl-source-stream'
+
+import browserify from 'browserify'
+import babelify from 'babelify'
 
 const dirs = {
-    src: '.',
-    dest: 'dist'
-};
+  src: 'src',
+  dest: 'dist'
+}
 
-const conf = {
-    js: {
-        src: `${dirs.src}/index.js`,
-        dest: `${dirs.dest}/index.transpiled.js`
-    }
-};
+const config = {
+  sass: {
+    entry: 'index.scss',
+    output: 'app.css',
+    src: path.join(__dirname, dirs.src, 'scss'),
+    dest: path.join(__dirname, dirs.dest, 'css')
+  },
+  js: {
+    entry: 'index.js',
+    output: 'app.js',
+    src: path.join(__dirname, dirs.src, 'js'),
+    dest: path.join(__dirname, dirs.dest, 'js')
+  }
+}
+
+const server = browserSync.create()
+const bundler = browserify({
+  entries: path.join(config.js.src, config.js.entry),
+  debug: true
+})
 
 gulp.task('js', () => {
-    return (
-        browserify({
-            entries: conf.js.src,
-            extensions: ['js'],
-            debug: true
-        })
-        .transform('babelify', {
-            presets: ['es2015']
-        })
-        .bundle()
-        .on('error', function(err) {
-            console.log(`--> Error bundling: ${err}`);
-            this.emit('end');
-        })
-        .pipe(source(conf.js.dest))
-        .pipe(gulp.dest('.'))
-    );
-});
+  bundler.transform(babelify)
 
-gulp.task('watch', ['bundle'], () => {
-    gulp.watch(`*.js`, ['js']);
-});
+  return bundler.bundle()
+    .on('error', () => {
+      console.log('--> Bundling error')
+    })
+    .pipe(source(config.js.output))
+    .pipe(buffer())
+    .pipe(sourcemaps.init({
+      loadMaps: true
+    }))
+    .pipe(uglify())
+    .pipe(clean(config.js.dest))
+    .pipe(sourcemaps.write('.'))
+    .pipe(gulp.dest(config.js.dest))
+    .pipe(server.reload({
+      stream: true
+    }))
+})
 
-gulp.task('bundle', ['js']);
+gulp.task('sass', () =>
+  gulp.src(path.join(config.sass.src, config.sass.entry))
+    .pipe(sourcemaps.init({
+      loadMaps: true
+    }))
+    .pipe(sass.sync().on('error', sass.logError))
+    .pipe(autoprefixer())
+    .pipe(rename(config.sass.output))
+    .pipe(minify())
+    .pipe(clean(config.sass.dest))
+    .pipe(sourcemaps.write('.'))
+    .pipe(gulp.dest(config.sass.dest))
+    .pipe(server.reload({
+      stream: true
+    }))
+)
 
-gulp.task('default', ['watch']);
+gulp.task('sync', () => {
+  server.init({
+		notify: false,
+		open: false,
+    server: {
+      baseDir: 'dist'
+    }
+  })
+})
 
+gulp.task('watch', [ 'sync', 'bundle' ], () => {
+  gulp.watch(path.join(config.sass.src, '**/*.scss'), [ 'sass' ])
+  gulp.watch(path.join(config.js.src, '**/*.js'), [ 'js' ])
+  gulp.watch(path.join(dirs.dest, '**/*.html')).on('change', server.reload)
+})
 
+gulp.task('bundle', [ 'js', 'sass' ])
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+gulp.task('default', [ 'watch' ])
